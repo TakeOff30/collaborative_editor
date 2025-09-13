@@ -31,16 +31,17 @@ Here is a comparison of the time complexities for the core RGA operations, where
 
 ### Analysis
 
--   **Insertion & Deletion:** The map-based implementation is exponentially faster. To insert or delete an element, the RGA algorithm needs to find an element by its unique ID. With a map, this lookup is an `O(log N)` operation. With a list, the entire list would have to be scanned from the beginning, resulting in an `O(N)` operation. For a large document, this difference is critical for real-time performance.
+-   **Insertion: `O(log N)`**
+    The `insert` operation's efficiency comes from using an Elixir `Map` to store the RGA elements. Elixir maps are implemented as Hash Array Mapped Tries (HAMTs), which provide logarithmic time complexity for insertions. The core of the operation is `Map.put(rga.elements, id, new_element)`. This avoids scanning the entire data structure, making it highly scalable for large documents. A list-based approach would require an `O(N)` scan to find the predecessor, which is significantly slower.
 
--   **ToString (Reconstruction):** The complexity of reconstructing the document string is effectively linear (`O(N)`) in both cases. However, since `insert` and `delete` are the most frequent operations during active collaboration, optimizing them is the highest priority.
+-   **Deletion: `O(log N)`**
+    Deletion is also an `O(log N)` operation. It consists of two main steps: finding the element by its ID with `Map.get`, and then updating its `deleted` flag with `Map.put`. Both `Map.get` and `Map.put` are `O(log N)` operations on a HAMT. The total complexity is therefore `O(log N) + O(log N)`, which simplifies to `O(log N)`. This "soft delete" (marking an element as a tombstone) is much faster than finding and removing an element from a list (`O(N)`).
+
+-   **ToString (Reconstruction): `O(N log K)`**
+    This complexity is a result of traversing all `N` elements while sorting any concurrent edits (`K`) at each position.
+    1.  The `to_string` function first performs an `O(N)` pass to group all non-deleted elements by their predecessor.
+    2.  The recursive `build_string` function is then called for each element. Inside this function, `Enum.sort_by` is used to order any concurrent insertions. The number of concurrent insertions at a single position is `K`.
+    3.  The complexity of sorting these `K` elements is `O(K log K)`.
+    4.  Since this sort happens for each of the `N` elements (in the worst case), the total complexity is `O(N * log K)`. In practice, `K` is usually a very small number (e.g., 2 or 3), so `log K` is nearly constant, making the operation behave very close to linear time (`O(N)`).
 
 The map-based approach provides the best of both worlds: the logical sequence is maintained via `predecessor_id` links within the elements, while the physical storage in a map provides the fast random access required for efficient, conflict-free editing.
-
-## Learn more
-
--   Official website: https://www.phoenixframework.org/
--   Guides: https://hexdocs.pm/phoenix/overview.html
--   Docs: https://hexdocs.pm/phoenix
--   Forum: https://elixirforum.com/c/phoenix-forum
--   Source: https://github.com/phoenixframework/phoenix
