@@ -45,3 +45,26 @@ Here is a comparison of the time complexities for the core RGA operations, where
     4.  Since this sort happens for each of the `N` elements (in the worst case), the total complexity is `O(N * log K)`. In practice, `K` is usually a very small number (e.g., 2 or 3), so `log K` is nearly constant, making the operation behave very close to linear time (`O(N)`).
 
 The map-based approach provides the best of both worlds: the logical sequence is maintained via `predecessor_id` links within the elements, while the physical storage in a map provides the fast random access required for efficient, conflict-free editing.
+
+## Peer Discovery: The `PeerRegistry` Module
+
+Peer discovery is handled by the `CollaborativeEditor.PeerRegistry` module, which acts as a lightweight, passive lookup service.
+
+### Implementation: Elixir's `Registry`
+
+This module is a thin wrapper around Elixir's built-in `Registry`. The `Registry` is a distributed, fault-tolerant key-value store designed for mapping names to process IDs (PIDs).
+
+### Responsibilities
+
+1.  **Initial Peer Discovery**: When a new `Peer` process joins a session, it queries the `PeerRegistry` exactly once to get a list of all other active peers.
+2.  **Registration**: The new `Peer` then registers itself with the `PeerRegistry` using a unique, sortable ID.
+
+### Decentralized Liveness Monitoring
+
+The `PeerRegistry`'s role is intentionally limited to this initial "handshake." It **does not** actively monitor peers or broadcast messages. Instead, once peers have discovered each other:
+
+-   Each `Peer` process directly monitors every other `Peer` process using `Process.monitor/1`.
+-   If a peer crashes, the BEAM runtime sends a `:DOWN` message to all monitoring peers.
+-   Each peer is then responsible for independently updating its own local list of active peers.
+
+This decentralized approach avoids a single point of failure and leverages OTP's powerful fault-tolerance primitives, ensuring the system remains robust and scalable. The `Registry` automatically cleans up entries for crashed processes, guaranteeing that the initial discovery list is always accurate.
