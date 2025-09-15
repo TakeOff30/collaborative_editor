@@ -6,7 +6,6 @@ defmodule CollaborativeEditor.PeerRegistry do
     """
     @registry_name __MODULE__
 
-
     @spec register_peer(any(), pid()) :: :ok | {:error, any()}
     def register_peer(id, pid) do
         Registry.register(@registry_name, id, pid)
@@ -19,7 +18,7 @@ defmodule CollaborativeEditor.PeerRegistry do
 
     @spec get_active_peers(any()) :: map()
     def get_active_peers(caller_id) do
-        Registry.select(@registry_name, [{{:"$1", :"$2"}, [], [{{:"$1", :"$2"}}]}])
+        Registry.select(@registry_name, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
         |> Enum.filter(fn {id, _pid} -> id != caller_id end)
         |> Map.new()
     end
