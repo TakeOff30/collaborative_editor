@@ -14,10 +14,17 @@ defmodule CollaborativeEditor.Peer do
   @type t :: %__MODULE__{
     id: integer(),
     rga: RGA.t(),
-    vector_clock: %{any() => integer()},
+    vector_clock: vector_clock(),
     op_buffer: [any()],
     peer_map: %{any() => pid()}
   }
+  @typep op_id :: {integer, any()}
+  @typep insert_op :: {:insert, String.t(), op_id() | nil, op_id()}
+  @typep delete_op :: {:delete, op_id()}
+  @typep operation :: insert_op() | delete_op()
+  @typep vector_clock :: %{any() => integer()}
+  @typep remote_op_tuple :: {any(), operation(), vector_clock()}
+
 
   #client callbacks
 
@@ -88,12 +95,10 @@ defmodule CollaborativeEditor.Peer do
     {:ok, peer_state}
   end
 
-
   @impl GenServer
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
   end
-
 
   @doc """
   Performs an insertion operation:
@@ -107,7 +112,6 @@ defmodule CollaborativeEditor.Peer do
     updated_vector_clock = Map.put(state.vector_clock, state.id, state.vector_clock[state.id] + 1)
     op_to_broadcast = {:insert, char, predecessor_id, {updated_vector_clock[state.id], state.id}}
     broadcast_to_peers(state.peer_map, {:remote_operation, {state.id, op_to_broadcast, updated_vector_clock}})
-
 
     {:noreply, %{state | rga: updated_rga, vector_clock: updated_vector_clock}}
   end
@@ -129,27 +133,75 @@ defmodule CollaborativeEditor.Peer do
   end
 
   @doc """
-  Handles a remote operation received from another peer:
+  Handles a remote operation received from another peer.
+  If the operation respects causal ordering:
   - Applies the operation to the local RGA state.
-  - Merges the sender's vector clock with the local vector clock.
+  - Applies unlocked buffered operations if any.
+  Otherwise buffers the operation.
   """
   @impl GenServer
-  def handle_cast({:remote_operation, {sender_id, op, sender_vc}}, state) do
-    case op do
-      {:insert, char, predecessor_id, id} ->
-        updated_rga = RGA.insert(state.rga, char, predecessor_id, id)
-        updated_vector_clock = Map.merge(state.vector_clock, sender_vc, fn _k, v1, v2 -> max(v1, v2) end)
-        {:noreply, %{state | rga: updated_rga, vector_clock: updated_vector_clock}}
+  def handle_cast({:remote_operation, {sender_id, _op, _sender_vc} = op_tuple}, state) do
 
-      {:delete, id} ->
-        updated_rga = RGA.delete(state.rga, id)
-        updated_vector_clock = Map.merge(state.vector_clock, sender_vc, fn _k, v1, v2 -> max(v1, v2) end)
-        {:noreply, %{state | rga: updated_rga, vector_clock: updated_vector_clock}}
-
-      _ ->
-        IO.puts("Unknown operation received: #{inspect(op)}")
-        {:noreply, state}
+    if can_apply?(op_tuple, state.vector_clock) do
+      updated_state = apply_remote_operation(op_tuple, state)
+      final_state = process_buffer(state)
+      {:no_reply, updated_state}
+    else
+      IO.puts("Buffer operation from #{sender_id}")
+      updated_buffer = [op_tuple | state.op_buffer]
+      {:no_reply, %{state | op_buffer: updated_buffer}}
     end
+
+  end
+
+  @spec
+  defp process_buffer(state) do
+    {ready_to_apply, buffered} =
+      Enum.split_with(state.op_buffer, fn operation ->
+        can_apply?(operation, state.vector_clock)
+      end)
+
+    if Enum.empty?(ready_to_apply) do
+      state
+    else
+      new_state =
+        Enum.reduce(
+          ready_to_apply,
+          %{state | op_buffer: buffered},
+          fn {to_apply, acc_state} -> apply_remote_operation(to_apply, acc_state) end)
+      process_buffer(new_state)
+    end
+
+  end
+
+  @spec can_apply?({any(), op, %{any() => integer()}}, %{any() => integer()}, t()) :: boolean()
+  defp can_apply?({sender_id, _op, sender_vc}, local_vc) do
+    is_adq_sender_clock =
+      sender_vc[sender_id] == (local_vc[sender_id] || 0) + 1
+
+    clocks_to_check = Map.delete(sender_vc, sender_id)
+    respects_causality =
+      Enum.all?(clocks_to_check, fn {peer_id, peer_clock} ->
+        peer_clock <= local_vc[peer_id]
+      end)
+    is_adq_sender_clock and respects_causality
+  end
+
+  @spec apply_remote_operation({sender_id, op, sender_vc}, state) :: {RGA.t(), %{any() => integer()}}
+  defp apply_remote_operation({sender_id, op, sender_vc}, state) do
+    # based on the type of operation, apply it, update rga and compute new vc
+    updated_rga =
+      case op do
+        {:insert, char, predecessor_id, elem_id} ->
+          RGA.insert(state.rga, char, predecessor_id, elem_id)
+        {:delete, elem_id} ->
+          RGA.delete(state.rga, elem_id)
+        _ -> nil
+      end
+    updated_vc =
+      Map.merge(state.vector_clock, sender_vc, fn _k, v1, v2 -> max(v1, v2) end)
+
+    %{state | vector_clock: updated_vc, rga: updated_rga}
   end
 
   @impl GenServer
