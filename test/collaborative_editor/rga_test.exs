@@ -2,7 +2,7 @@ defmodule CollaborativeEditor.RGA.Test do
   use ExUnit.Case, async: true
 
   alias CollaborativeEditor.RGA
-  alias CollaborativeEditor.RGA.Element
+  
 
   describe "new/0" do
     test "creates a new, empty RGA struct" do

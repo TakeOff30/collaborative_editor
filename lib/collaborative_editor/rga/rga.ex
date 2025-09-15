@@ -51,23 +51,23 @@ defmodule CollaborativeEditor.RGA do
     successors_map =
       rga.elements
       |> Map.values()
-      |> Enum.reject(fn element -> element.deleted end)
       |> Enum.group_by(fn element -> element.predecessor_id end)
 
-    build_string(successors_map, nil)
+    build_string(successors_map, nil, rga.elements)
   end
 
-  @doc """
-  Recursively builds the string representation of the RGA by traversing the elements.
-  """
-  @spec build_string(%{({integer, any()}) | nil => [Element.t()]}, ({integer, any()}) | nil) :: String.t()
-  defp build_string(successors_map, predecessor_id) do
+  @spec build_string(map(), {any(), integer}, map()) :: String.t()
+  defp build_string(successors_map, predecessor_id, elements) do
     successors = Map.get(successors_map, predecessor_id, [])
 
     sorted_successors = Enum.sort_by(successors, (fn element -> element.id end), (fn a, b -> a >= b end))
 
     Enum.reduce(sorted_successors, "", fn element, acc ->
-      acc <> element.char <> build_string(successors_map, element.id)
+      if Map.get(elements, element.id).deleted do
+        acc <> build_string(successors_map, element.id, elements)
+      else
+        acc <> element.char <> build_string(successors_map, element.id, elements)
+      end
     end)
   end
 
