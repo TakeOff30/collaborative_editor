@@ -7,6 +7,7 @@ defmodule CollaborativeEditor.Peer do
   use GenServer
   alias CollaborativeEditor.RGA
   alias CollaborativeEditor.PeerRegistry
+  alias CollaborativeEditor.Logger
 
   defstruct id: nil, rga: nil, vector_clock: %{}, op_buffer: [], peer_map: %{}
 
@@ -55,7 +56,7 @@ defmodule CollaborativeEditor.Peer do
   def init(args) do
 
     peers = PeerRegistry.get_active_peers(args.id)
-
+    Logger.log("Peer #{args.id} announces presence")
     broadcast_to_peers(peers, {:new_peer, args.id, self()})
 
     PeerRegistry.register_peer(args.id, self())
@@ -107,6 +108,7 @@ defmodule CollaborativeEditor.Peer do
     updated_rga = RGA.insert(state.rga, char, predecessor_id, {state.vector_clock[state.id] + 1, state.id})
     updated_vector_clock = Map.put(state.vector_clock, state.id, state.vector_clock[state.id] + 1)
     op_to_broadcast = {:insert, char, predecessor_id, {updated_vector_clock[state.id], state.id}}
+    Logger.log("#{state.id} inserts a character")
     broadcast_to_peers(state.peer_map, {:remote_operation, {state.id, op_to_broadcast, updated_vector_clock}})
 
     {:noreply, %{state | rga: updated_rga, vector_clock: updated_vector_clock}}
@@ -118,6 +120,7 @@ defmodule CollaborativeEditor.Peer do
     updated_rga = RGA.delete(state.rga, id)
     updated_vector_clock = Map.put(state.vector_clock, state.id, state.vector_clock[state.id] + 1)
     op_to_broadcast = {:delete, id}
+    Logger.log("#{state.id} deletes a character")
     broadcast_to_peers(state.peer_map, {:remote_operation, {state.id, op_to_broadcast, updated_vector_clock}})
 
     {:noreply, %{state | rga: updated_rga, vector_clock: updated_vector_clock}}
@@ -132,7 +135,7 @@ defmodule CollaborativeEditor.Peer do
       final_state = process_buffer(updated_state)
       {:noreply, final_state}
     else
-      IO.puts("Buffer operation from #{sender_id}")
+      Logger.log("#{state.id} buffered an operation from #{sender_id}")
       updated_buffer = [op_tuple | state.op_buffer]
       {:noreply, %{state | op_buffer: updated_buffer}}
     end
@@ -211,15 +214,28 @@ defmodule CollaborativeEditor.Peer do
       nil ->
         {:noreply, state}
       {peer_id_to_remove, _pid} ->
-        IO.puts("Peer #{peer_id_to_remove} has crashed or disconnected.")
+        Logger.log("#{peer_id_to_remove} has crashed or disconnected. Removing from #{state.id} state")
         updated_pids = Map.delete(state.peer_map, peer_id_to_remove)
         {:noreply, %{state | peer_map: updated_pids}}
     end
   end
 
-  defp broadcast_to_peers(peers, message) do
+  defp broadcast_to_peers(peers, {_, sender_id, _} = message) do
+    Logger.log("#{sender_id} starts broadcasting")
     Map.values(peers)
     |> Enum.each(fn peer_pid ->
+      Logger.log("#{sender_id} sends broadcast message to #{inspect(peer_pid)}")
+      GenServer.cast(peer_pid, message)
+    end)
+
+    :ok
+  end
+
+  defp broadcast_to_peers(peers, {_, {sender_id, _, _}} = message) do
+    Logger.log("#{sender_id} starts broadcasting")
+    Map.values(peers)
+    |> Enum.each(fn peer_pid ->
+      Logger.log("#{sender_id} sends broadcast message to #{inspect(peer_pid)}")
       GenServer.cast(peer_pid, message)
     end)
 
