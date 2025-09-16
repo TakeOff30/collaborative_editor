@@ -68,3 +68,47 @@ The `PeerRegistry`'s role is intentionally limited to this initial "handshake." 
 -   Each peer is then responsible for independently updating its own local list of active peers.
 
 This decentralized approach avoids a single point of failure and leverages OTP's powerful fault-tolerance primitives, ensuring the system remains robust and scalable. The `Registry` automatically cleans up entries for crashed processes, guaranteeing that the initial discovery list is always accurate.
+
+## The `Peer` Module: State, Concurrency, and Causal Order
+
+The `CollaborativeEditor.Peer` module is the heart of the real-time collaboration logic. Each `Peer` is a `GenServer` process that represents a single user's session, managing its own document state and communicating with other peers.
+
+### Core Responsibilities
+
+-   **State Management**: Each peer holds its own copy of the RGA document, a vector clock for tracking causality, a list of connected peers, and a buffer for out-of-order operations.
+-   **Operation Handling**: It processes both local user edits and remote operations from other peers.
+-   **Communication**: It broadcasts local changes to all other peers and handles incoming messages.
+
+### Peer Initialization and State Synchronization
+
+When a new peer starts (via [`Peer.start_link/1`](lib/collaborative_editor/peer.ex)), its `init/1` function performs a critical sequence:
+
+1.  **Discover Peers**: It calls [`PeerRegistry.get_active_peers/1`](lib/collaborative_editor/peer_registry.ex) to get a map of all other active peers.
+2.  **Announce Itself**: It broadcasts a `{:new_peer, ...}` message to all discovered peers, so they can add it to their local `peer_map` and start monitoring it.
+3.  **Synchronize State**:
+    -   If no other peers exist, it initializes a new, empty document.
+    -   If peers do exist, it performs a `GenServer.call` to the first available peer to fetch its entire state ([`rga`](lib/collaborative_editor/peer.ex) and [`vector_clock`](lib/collaborative_editor/peer.ex)). This instantly brings the new peer up-to-date with the current document.
+4.  **Monitor Peers**: It calls `Process.monitor/1` on every other peer to receive `:DOWN` messages if one of them crashes.
+
+### Causal Broadcast and Operation Buffering
+
+To prevent conflicts and ensure all peers converge to the same state, the system must guarantee that operations are applied in a correct causal order. This is achieved through vector clocks and an operation buffer.
+
+1.  **Broadcasting an Operation**: When a peer makes a local change ([`insert`](lib/collaborative_editor/peer.ex) or [`delete`](lib/collaborative_editor/peer.ex)), it increments its own clock in its vector clock and broadcasts the operation along with its new vector clock to all other peers.
+
+2.  **Receiving an Operation**: When a peer receives a remote operation, it doesn't apply it immediately. Instead, it calls [`can_apply?/2`](lib/collaborative_editor/peer.ex), which checks two conditions:
+
+    -   The operation's clock from the sender is exactly one greater than the last known clock for that sender.
+    -   The sender's vector clock does not contain any knowledge that the receiving peer is missing.
+
+3.  **Buffering**: If [`can_apply?`](lib/collaborative_editor/peer.ex) returns `false`, it means a causally preceding operation has not yet arrived. The incoming operation is added to the [`op_buffer`](lib/collaborative_editor/peer.ex).
+
+4.  **Processing the Buffer**: After successfully applying any operation, the peer runs [`process_buffer/1`](lib/collaborative_editor/peer.ex). This function recursively iterates through the buffer, applying any operations that now meet the causal delivery criteria thanks to the updated vector clock. This ensures that buffered operations are eventually applied in the correct order.
+
+### Communication Complexity: O(N)
+
+The communication model used by the `Peer` module is a full-mesh broadcast. Every peer maintains a direct connection to every other peer in the session. This has direct implications for the communication complexity, where `N` is the total number of peers.
+
+-   **Operation Broadcast**: When a peer generates a new operation (an insertion or deletion), it broadcasts the operation to all other `N-1` peers. This results in **O(N)** messages for a single edit.
+-   **Peer Joining**: When a new peer joins, it announces its presence to all `N-1` existing peers, resulting in **O(N)** messages.
+-   **Peer Leaving/Crashing**: When a peer disconnects, the underlying BEAM runtime sends a `:DOWN` message to all `N-1` peers that were monitoring it, again resulting in **O(N)** messages.
