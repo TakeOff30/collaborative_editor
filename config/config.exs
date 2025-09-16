@@ -15,7 +15,7 @@ config :collaborative_editor, CollaborativeEditorWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
-    formats: [json: CollaborativeEditorWeb.ErrorJSON],
+    formats: [],
     layout: false
   ],
   pubsub_server: CollaborativeEditor.PubSub,

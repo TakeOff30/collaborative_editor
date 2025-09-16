@@ -1,12 +1,11 @@
 defmodule CollaborativeEditorWeb.Router do
   use CollaborativeEditorWeb, :router
 
-  pipeline :api do
-    plug :accepts, ["json"]
-  end
+  scope "/", CollaborativeEditorWeb do
+    pipe_through :browser
 
-  scope "/api", CollaborativeEditorWeb do
-    pipe_through :api
+    live "/", MenuLive, :index
+    live "/editor/:peer_id", EditorLive, :show
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
