@@ -26,5 +26,8 @@ erl_crash.dump
 collaborative_editor-*.tar
 
 .env
+
 *.md
 !README.md
+
+peer_communication.log
