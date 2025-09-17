@@ -47,6 +47,40 @@ defmodule CollaborativeEditorWeb do
     end
   end
 
+  def live_view do
+    quote do
+      use Phoenix.LiveView
+
+      unquote(html_helpers())
+    end
+  end
+
+  def live_component do
+    quote do
+      use Phoenix.LiveComponent
+
+      unquote(html_helpers())
+    end
+  end
+
+  defp html_helpers do
+    quote do
+      # Import basic HTML helpers (e.g. `<.form>`)
+      import Phoenix.HTML
+      # Import LiveView helpers (e.g. `<.flash>`)
+      import Phoenix.LiveView.Helpers
+
+      # Import basic CoreComponents
+      import CollaborativeEditorWeb.CoreComponents
+
+      # Alias the layouts module
+      alias CollaborativeEditorWeb.Layouts
+
+      # Import verified routes
+      unquote(verified_routes())
+    end
+  end
+
   def verified_routes do
     quote do
       use Phoenix.VerifiedRoutes,
