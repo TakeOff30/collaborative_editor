@@ -31,7 +31,7 @@ defmodule CollaborativeEditor.Peer do
 
   @spec start_link(integer()) :: GenServer.on_start()
   def start_link(id) do
-    GenServer.start_link(__MODULE__, %{id: id})
+    GenServer.start_link(__MODULE__, %{id: id}, name: {:via, Registry, {CollaborativeEditor.PeerRegistry, id}})
   end
 
   @spec insert(pid(), String.t(), op_id() | nil) :: :ok
@@ -59,7 +59,7 @@ defmodule CollaborativeEditor.Peer do
     Logger.log("Peer #{args.id} announces presence")
     broadcast_to_peers(peers, {:new_peer, args.id, self()})
 
-    PeerRegistry.register_peer(args.id, self())
+    
 
     peer_state =
       if map_size(peers) == 0 do

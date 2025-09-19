@@ -4,7 +4,7 @@ import Config
 # you can enable the server option below.
 config :collaborative_editor, CollaborativeEditorWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
-  secret_key_base: "jT9Z3pmk8kUEmEmW2YKktnKkhTr6oW2G9B3W+3uiIMcaQwcvCotKtSO4igTZ6Sfa",
+  secret_key_base: "95k9DWWsV+9XSh9umSPk8EnuP0SBtPhe4AbIZ1+c3SMb73XF8o0DYAP4s5HfZnDH",
   server: false
 
 # In test we don't send emails
@@ -18,3 +18,7 @@ config :logger, level: :warning
 
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
+
+# Enable helpful, but potentially expensive runtime checks
+config :phoenix_live_view,
+  enable_expensive_runtime_checks: true

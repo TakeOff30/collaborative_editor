@@ -15,11 +15,11 @@ config :collaborative_editor, CollaborativeEditorWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
-    formats: [],
+    formats: [html: CollaborativeEditorWeb.ErrorHTML, json: CollaborativeEditorWeb.ErrorJSON],
     layout: false
   ],
   pubsub_server: CollaborativeEditor.PubSub,
-  live_view: [signing_salt: "kmgia0Ef"]
+  live_view: [signing_salt: "2jsv2Zqn"]
 
 # Configures the mailer
 #
@@ -29,6 +29,27 @@ config :collaborative_editor, CollaborativeEditorWeb.Endpoint,
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
 config :collaborative_editor, CollaborativeEditor.Mailer, adapter: Swoosh.Adapters.Local
+
+# Configure esbuild (the version is required)
+config :esbuild,
+  version: "0.25.4",
+  collaborative_editor: [
+    args:
+      ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
+    cd: Path.expand("../assets", __DIR__),
+    env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
+  ]
+
+# Configure tailwind (the version is required)
+config :tailwind,
+  version: "4.1.7",
+  collaborative_editor: [
+    args: ~w(
+      --input=assets/css/app.css
+      --output=priv/static/assets/css/app.css
+    ),
+    cd: Path.expand("..", __DIR__)
+  ]
 
 # Configures Elixir's Logger
 config :logger, :default_formatter,

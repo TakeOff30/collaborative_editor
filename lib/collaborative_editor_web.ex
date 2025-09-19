@@ -26,6 +26,7 @@ defmodule CollaborativeEditorWeb do
       # Import common connection and controller functions to use in pipelines
       import Plug.Conn
       import Phoenix.Controller
+      import Phoenix.LiveView.Router
     end
   end
 
@@ -63,20 +64,34 @@ defmodule CollaborativeEditorWeb do
     end
   end
 
+  def html do
+    quote do
+      use Phoenix.Component
+
+      # Import convenience functions from controllers
+      import Phoenix.Controller,
+        only: [get_csrf_token: 0, view_module: 1, view_template: 1]
+
+      # Include general helpers for rendering HTML
+      unquote(html_helpers())
+    end
+  end
+
   defp html_helpers do
     quote do
-      # Import basic HTML helpers (e.g. `<.form>`)
-      import Phoenix.HTML
-      # Import LiveView helpers (e.g. `<.flash>`)
-      import Phoenix.LiveView.Helpers
+      # Translation
+      use Gettext, backend: CollaborativeEditorWeb.Gettext
 
-      # Import basic CoreComponents
+      # HTML escaping functionality
+      import Phoenix.HTML
+      # Core UI components
       import CollaborativeEditorWeb.CoreComponents
 
-      # Alias the layouts module
+      # Common modules used in templates
+      alias Phoenix.LiveView.JS
       alias CollaborativeEditorWeb.Layouts
 
-      # Import verified routes
+      # Routes generation with the ~p sigil
       unquote(verified_routes())
     end
   end
