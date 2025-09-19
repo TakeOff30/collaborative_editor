@@ -2,39 +2,56 @@ defmodule CollaborativeEditorWeb.EditorLive do
   use CollaborativeEditorWeb, :live_view
   alias CollaborativeEditor.Peer
   alias CollaborativeEditor.RGA
+  alias CollaborativeEditor.SessionHandler
 
   @impl true
-  def mount(%{"peer_id" => peer_id}, _session, socket) do
-    peer_id = String.to_integer(peer_id)
-    case Peer.start_link(peer_id) do
-      {:ok, peer_pid} ->
+  def mount(%{"peer_id" => peer_id}, session, socket) do
+    user_id = session["user_id"]
+    active_user_for_peer = SessionHandler.get_user_by_peer(peer_id)
+
+    cond do
+      active_user_for_peer != nil and active_user_for_peer != user_id ->
+        {:ok,
+         socket
+         |> assign(peer_id: peer_id)
+         |> put_flash(:error, "Peer slot ##{peer_id} is already taken.")
+         |> redirect(to: ~p"/")}
+
+      true ->
         if connected?(socket),
           do: Phoenix.PubSub.subscribe(CollaborativeEditor.PubSub, "doc_update#{peer_id}")
 
-        Phoenix.PubSub.broadcast(CollaborativeEditor.PubSub, "peers", {:peer_update})
-        peer_state = Peer.get_state(peer_pid)
-        document = RGA.to_string(peer_state.rga)
+        case Peer.start_link(peer_id) do
+          {:ok, peer_pid} ->
+            SessionHandler.set_active_peer(peer_id, user_id)
+            Phoenix.PubSub.broadcast(CollaborativeEditor.PubSub, "peers", {:peer_update})
+            document = RGA.to_string(Peer.get_state(peer_pid).rga)
 
-        socket =
-          assign(socket,
-            peer_id: peer_id,
-            peer_pid: peer_pid,
-            document: document
-          )
+            {:ok,
+             assign(socket,
+               peer_id: peer_id,
+               peer_pid: peer_pid,
+               document: document,
+               user_id: user_id
+             )}
 
-        {:ok, socket}
-      {:error, {:already_started, _pid}} ->
-        IO.puts("Already taken")
-        {:ok,
-          socket
-          |> put_flash(:error, "Peer slot ##{peer_id} is already taken.")
-          |> redirect(to: ~p"/")
-        }
+          {:error, {:already_started, peer_pid}} ->
+            document = RGA.to_string(Peer.get_state(peer_pid).rga)
+
+            {:ok,
+             assign(socket,
+               peer_id: peer_id,
+               peer_pid: peer_pid,
+               document: document,
+               user_id: user_id
+             )}
+        end
     end
   end
 
   @impl true
   def terminate(_reason, socket) do
+    SessionHandler.deactivate_peer(socket.assigns.peer_id)
     GenServer.stop(socket.assigns.peer_pid)
     Phoenix.PubSub.broadcast(CollaborativeEditor.PubSub, "peers", {:peer_update})
     :ok
@@ -42,9 +59,9 @@ defmodule CollaborativeEditorWeb.EditorLive do
 
   @impl true
   def handle_event() do
-
   end
 
+  @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash}>

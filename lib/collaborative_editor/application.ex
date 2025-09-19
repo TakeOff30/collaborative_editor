@@ -9,9 +9,11 @@ defmodule CollaborativeEditor.Application do
   def start(_type, _args) do
     children = [
       CollaborativeEditorWeb.Telemetry,
-      {DNSCluster, query: Application.get_env(:collaborative_editor, :dns_cluster_query) || :ignore},
+      {DNSCluster,
+       query: Application.get_env(:collaborative_editor, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: CollaborativeEditor.PubSub},
       {Registry, keys: :unique, name: CollaborativeEditor.PeerRegistry},
+      {CollaborativeEditor.SessionHandler, name: CollaborativeEditor.SessionHandler},
       CollaborativeEditor.Logger,
       # Start a worker by calling: CollaborativeEditor.Worker.start_link(arg)
       # {CollaborativeEditor.Worker, arg},

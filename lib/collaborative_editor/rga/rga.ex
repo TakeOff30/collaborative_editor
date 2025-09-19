@@ -11,9 +11,9 @@ defmodule CollaborativeEditor.RGA do
   element (the starting point of the document).
   """
   @type t :: %__MODULE__{
-    elements: %{{integer, any} => Element.t()},
-    head: Element.t() | nil
-  }
+          elements: %{{integer, any} => Element.t()},
+          head: Element.t() | nil
+        }
 
   @spec new() :: t()
   def new do
@@ -38,7 +38,9 @@ defmodule CollaborativeEditor.RGA do
   @spec delete(t(), {integer, any()}) :: t()
   def delete(rga, id) do
     case Map.get(rga.elements, id) do
-      nil -> rga
+      nil ->
+        rga
+
       element ->
         updated_element = %Element{element | deleted: true}
         updated_elements = Map.put(rga.elements, id, updated_element)
@@ -60,7 +62,8 @@ defmodule CollaborativeEditor.RGA do
   defp build_string(successors_map, predecessor_id, elements) do
     successors = Map.get(successors_map, predecessor_id, [])
 
-    sorted_successors = Enum.sort_by(successors, (fn element -> element.id end), (fn a, b -> a >= b end))
+    sorted_successors =
+      Enum.sort_by(successors, fn element -> element.id end, fn a, b -> a >= b end)
 
     Enum.reduce(sorted_successors, "", fn element, acc ->
       if Map.get(elements, element.id).deleted do
@@ -70,5 +73,4 @@ defmodule CollaborativeEditor.RGA do
       end
     end)
   end
-
 end

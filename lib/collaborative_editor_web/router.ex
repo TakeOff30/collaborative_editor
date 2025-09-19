@@ -9,6 +9,7 @@ defmodule CollaborativeEditorWeb.Router do
     plug :put_root_layout, html: {CollaborativeEditorWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug CollaborativeEditorWeb.Plugs.AssignUserIdPlug
   end
 
   scope "/", CollaborativeEditorWeb do
