@@ -12,12 +12,12 @@ defmodule CollaborativeEditor.Peer do
   defstruct id: nil, rga: nil, vector_clock: %{}, op_buffer: [], peer_map: %{}
 
   @type t :: %__MODULE__{
-    id: integer(),
-    rga: RGA.t(),
-    vector_clock: vector_clock(),
-    op_buffer: [any()],
-    peer_map: %{any() => pid()}
-  }
+          id: integer(),
+          rga: RGA.t(),
+          vector_clock: vector_clock(),
+          op_buffer: [any()],
+          peer_map: %{any() => pid()}
+        }
   @typep peer_id :: any()
   @typep op_id :: {integer, peer_id()}
   @typep insert_op :: {:insert, String.t(), op_id() | nil, op_id()}
@@ -26,12 +26,13 @@ defmodule CollaborativeEditor.Peer do
   @typep vector_clock :: %{peer_id() => integer()}
   @typep remote_op_tuple :: {peer_id(), operation(), vector_clock()}
 
-
-  #client callbacks
+  # client callbacks
 
   @spec start_link(integer()) :: GenServer.on_start()
   def start_link(id) do
-    GenServer.start_link(__MODULE__, %{id: id}, name: {:via, Registry, {CollaborativeEditor.PeerRegistry, id}})
+    GenServer.start_link(__MODULE__, %{id: id},
+      name: {:via, Registry, {CollaborativeEditor.PeerRegistry, id}}
+    )
   end
 
   @spec insert(pid(), String.t(), op_id() | nil) :: :ok
@@ -49,21 +50,24 @@ defmodule CollaborativeEditor.Peer do
     GenServer.call(peer_pid, :get_state)
   end
 
-  #server callbacks
+  @spec id_at_position(pid(), integer()) :: op_id() | nil
+  def id_at_position(peer_pid, position) do
+    GenServer.call(peer_pid, {:id_at_position, position})
+  end
+
+  # server callbacks
 
   @impl GenServer
   @spec init(%{id: integer()}) :: {:ok, t()}
   def init(args) do
-
     peers = PeerRegistry.get_active_peers(args.id)
     Logger.log("Peer #{args.id} announces presence")
     broadcast_to_peers(peers, {:new_peer, args.id, self()})
 
-    
-
     peer_state =
       if map_size(peers) == 0 do
         IO.puts("No other peers found. Initializing new document.")
+
         %__MODULE__{
           id: args.id,
           rga: RGA.new(),
@@ -72,12 +76,16 @@ defmodule CollaborativeEditor.Peer do
           peer_map: %{}
         }
       else
-        IO.puts("Found existing peers: #{inspect(Map.keys(peers))}. Contacting one to sync state.")
+        IO.puts(
+          "Found existing peers: #{inspect(Map.keys(peers))}. Contacting one to sync state."
+        )
+
         updated_state =
           peers
           |> Map.values()
           |> Enum.at(0)
           |> GenServer.call(:get_state)
+
         %__MODULE__{
           id: args.id,
           rga: updated_state.rga,
@@ -103,15 +111,29 @@ defmodule CollaborativeEditor.Peer do
   end
 
   @impl GenServer
+  def handle_call({:id_at_position, position}, _from, state) do
+    element_id = RGA.id_at_position(state.rga, position)
+    {:reply, element_id, state}
+  end
+
+  @impl GenServer
   @spec handle_cast({:insert, String.t(), op_id() | nil}, t()) :: {:noreply, t()}
   def handle_cast({:insert, char, predecessor_id}, state) do
-    updated_rga = RGA.insert(state.rga, char, predecessor_id, {state.vector_clock[state.id] + 1, state.id})
+    updated_rga =
+      RGA.insert(state.rga, char, predecessor_id, {state.vector_clock[state.id] + 1, state.id})
+
     updated_vector_clock = Map.put(state.vector_clock, state.id, state.vector_clock[state.id] + 1)
     op_to_broadcast = {:insert, char, predecessor_id, {updated_vector_clock[state.id], state.id}}
     Logger.log("#{state.id} inserts a character")
-    broadcast_to_peers(state.peer_map, {:remote_operation, {state.id, op_to_broadcast, updated_vector_clock}})
 
-    {:noreply, %{state | rga: updated_rga, vector_clock: updated_vector_clock}}
+    broadcast_to_peers(
+      state.peer_map,
+      {:remote_operation, {state.id, op_to_broadcast, updated_vector_clock}}
+    )
+
+    new_state = %{state | rga: updated_rga, vector_clock: updated_vector_clock}
+    broadcast_document_update(new_state)
+    {:noreply, new_state}
   end
 
   @impl GenServer
@@ -121,16 +143,22 @@ defmodule CollaborativeEditor.Peer do
     updated_vector_clock = Map.put(state.vector_clock, state.id, state.vector_clock[state.id] + 1)
     op_to_broadcast = {:delete, id}
     Logger.log("#{state.id} deletes a character")
-    broadcast_to_peers(state.peer_map, {:remote_operation, {state.id, op_to_broadcast, updated_vector_clock}})
 
-    {:noreply, %{state | rga: updated_rga, vector_clock: updated_vector_clock}}
+    broadcast_to_peers(
+      state.peer_map,
+      {:remote_operation, {state.id, op_to_broadcast, updated_vector_clock}}
+    )
+
+    new_state = %{state | rga: updated_rga, vector_clock: updated_vector_clock}
+    broadcast_document_update(new_state)
+    {:noreply, new_state}
   end
 
   @impl GenServer
   @spec handle_cast({:remote_operation, remote_op_tuple()}, t()) :: {:noreply, t()}
   def handle_cast({:remote_operation, {sender_id, _op, _sender_vc} = op_tuple}, state) do
-
     if can_apply?(op_tuple, state.vector_clock) do
+      IO.puts(inspect(op_tuple))
       updated_state = apply_remote_operation(op_tuple, state)
       final_state = process_buffer(updated_state)
       {:noreply, final_state}
@@ -139,7 +167,6 @@ defmodule CollaborativeEditor.Peer do
       updated_buffer = [op_tuple | state.op_buffer]
       {:noreply, %{state | op_buffer: updated_buffer}}
     end
-
   end
 
   @impl GenServer
@@ -165,10 +192,11 @@ defmodule CollaborativeEditor.Peer do
         Enum.reduce(
           ready_to_apply,
           %{state | op_buffer: buffered},
-          fn to_apply, acc_state -> apply_remote_operation(to_apply, acc_state) end)
+          fn to_apply, acc_state -> apply_remote_operation(to_apply, acc_state) end
+        )
+
       process_buffer(new_state)
     end
-
   end
 
   @spec can_apply?(remote_op_tuple(), vector_clock()) :: boolean()
@@ -177,10 +205,12 @@ defmodule CollaborativeEditor.Peer do
       sender_vc[sender_id] == (local_vc[sender_id] || 0) + 1
 
     clocks_to_check = Map.delete(sender_vc, sender_id)
+
     respects_causality =
       Enum.all?(clocks_to_check, fn {peer_id, peer_clock} ->
         peer_clock <= (local_vc[peer_id] || 0)
       end)
+
     is_adq_sender_clock and respects_causality
   end
 
@@ -191,14 +221,20 @@ defmodule CollaborativeEditor.Peer do
       case op do
         {:insert, char, predecessor_id, elem_id} ->
           RGA.insert(state.rga, char, predecessor_id, elem_id)
+
         {:delete, elem_id} ->
           RGA.delete(state.rga, elem_id)
-        _ -> state.rga
+
+        _ ->
+          state.rga
       end
+
     updated_vc =
       Map.merge(state.vector_clock, sender_vc, fn _k, v1, v2 -> max(v1, v2) end)
 
-    %{state | vector_clock: updated_vc, rga: updated_rga}
+    new_state = %{state | vector_clock: updated_vc, rga: updated_rga}
+    broadcast_document_update(new_state)
+    new_state
   end
 
   @doc """
@@ -213,8 +249,12 @@ defmodule CollaborativeEditor.Peer do
     case crashed_peer_id do
       nil ->
         {:noreply, state}
+
       {peer_id_to_remove, _pid} ->
-        Logger.log("#{peer_id_to_remove} has crashed or disconnected. Removing from #{state.id} state")
+        Logger.log(
+          "#{peer_id_to_remove} has crashed or disconnected. Removing from #{state.id} state"
+        )
+
         updated_pids = Map.delete(state.peer_map, peer_id_to_remove)
         {:noreply, %{state | peer_map: updated_pids}}
     end
@@ -222,6 +262,7 @@ defmodule CollaborativeEditor.Peer do
 
   defp broadcast_to_peers(peers, {_, sender_id, _} = message) do
     Logger.log("#{sender_id} starts broadcasting")
+
     Map.values(peers)
     |> Enum.each(fn peer_pid ->
       Logger.log("#{sender_id} sends broadcast message to #{inspect(peer_pid)}")
@@ -233,6 +274,7 @@ defmodule CollaborativeEditor.Peer do
 
   defp broadcast_to_peers(peers, {_, {sender_id, _, _}} = message) do
     Logger.log("#{sender_id} starts broadcasting")
+
     Map.values(peers)
     |> Enum.each(fn peer_pid ->
       Logger.log("#{sender_id} sends broadcast message to #{inspect(peer_pid)}")
@@ -240,5 +282,15 @@ defmodule CollaborativeEditor.Peer do
     end)
 
     :ok
+  end
+
+  defp broadcast_document_update(state) do
+    new_document_string = RGA.to_string(state.rga)
+
+    Phoenix.PubSub.broadcast(
+      CollaborativeEditor.PubSub,
+      "doc_update#{state.id}",
+      {:doc_update, new_document_string}
+    )
   end
 end

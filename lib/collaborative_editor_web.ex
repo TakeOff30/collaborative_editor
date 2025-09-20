@@ -21,7 +21,7 @@ defmodule CollaborativeEditorWeb do
 
   def router do
     quote do
-      use Phoenix.Router, helpers: false
+      use Phoenix.Router
 
       # Import common connection and controller functions to use in pipelines
       import Plug.Conn
@@ -53,6 +53,7 @@ defmodule CollaborativeEditorWeb do
       use Phoenix.LiveView
 
       unquote(html_helpers())
+      unquote(verified_routes())
     end
   end
 

@@ -48,6 +48,43 @@ defmodule CollaborativeEditor.RGA do
     end
   end
 
+  @spec id_at_position(t(), integer()) :: {integer, any} | nil
+  def id_at_position(rga, position) do
+    list = to_list(rga)
+
+    if position < 1 or position > Enum.count(list) do
+      nil
+    else
+      Enum.at(list, position - 1).id
+    end
+  end
+
+  @spec to_list(t()) :: list(Element.t())
+  def to_list(rga) do
+    successors_map =
+      rga.elements
+      |> Map.values()
+      |> Enum.group_by(fn element -> element.predecessor_id end)
+
+    build_list_filtered(successors_map, nil)
+  end
+
+  @spec build_list_filtered(map(), {integer, any}) :: list(Element.t())
+  defp build_list_filtered(successors_map, predecessor_id) do
+    successors = Map.get(successors_map, predecessor_id, [])
+
+    sorted_successors =
+      Enum.sort_by(successors, fn element -> element.id end, fn a, b -> a >= b end)
+
+    Enum.flat_map(sorted_successors, fn element ->
+      non_deleted_part = if element.deleted, do: [], else: [element]
+
+      rest = build_list_filtered(successors_map, element.id)
+
+      non_deleted_part ++ rest
+    end)
+  end
+
   @spec to_string(t()) :: String.t()
   def to_string(rga) do
     successors_map =

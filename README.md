@@ -112,3 +112,9 @@ The communication model used by the `Peer` module is a full-mesh broadcast. Ever
 -   **Operation Broadcast**: When a peer generates a new operation (an insertion or deletion), it broadcasts the operation to all other `N-1` peers. This results in **O(N)** messages for a single edit.
 -   **Peer Joining**: When a new peer joins, it announces its presence to all `N-1` existing peers, resulting in **O(N)** messages.
 -   **Peer Leaving/Crashing**: When a peer disconnects, the underlying BEAM runtime sends a `:DOWN` message to all `N-1` peers that were monitoring it, again resulting in **O(N)** messages.
+
+### Editor LiveView - Server communication
+
+-   When visiting an editor page (e.g., `/editor/1`), the browser makes a standard HTTP request. The Phoenix server renders the initial HTML page and sends it back.
+-   The browser then establishes a persistent **WebSocket** connection to the `EditorLive` LiveView on the server and defines `Hooks` that listen for events on the textarea [`Hooks.Editor`](assets/js/app.js). The insertions are parsed and sent to the server (peer process).
+-   The Peer process applies the logic described above: broadcasts the modifications, applies them locally and sends an update via **PubSub** to its connected `EditorLive`.

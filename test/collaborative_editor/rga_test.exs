@@ -2,7 +2,6 @@ defmodule CollaborativeEditor.RGA.Test do
   use ExUnit.Case, async: true
 
   alias CollaborativeEditor.RGA
-  
 
   describe "new/0" do
     test "creates a new, empty RGA struct" do
@@ -93,6 +92,130 @@ defmodule CollaborativeEditor.RGA.Test do
 
       unchanged_rga = RGA.delete(rga, {99, :peer_x})
       assert rga == unchanged_rga
+    end
+  end
+
+  describe "id_at_position/2" do
+    test "returns the ID of the element at a given position" do
+      rga = RGA.new()
+      rga = RGA.insert(rga, "a", nil, {1, :peer_a})
+      rga = RGA.insert(rga, "b", {1, :peer_a}, {2, :peer_a})
+      rga = RGA.insert(rga, "c", {2, :peer_a}, {3, :peer_a})
+
+      assert RGA.id_at_position(rga, 1) == {1, :peer_a}
+      assert RGA.id_at_position(rga, 2) == {2, :peer_a}
+      assert RGA.id_at_position(rga, 3) == {3, :peer_a}
+    end
+
+    test "returns nil for out-of-bounds positions" do
+      rga = RGA.new()
+      rga = RGA.insert(rga, "a", nil, {1, :peer_a})
+
+      assert RGA.id_at_position(rga, 0) == nil
+      assert RGA.id_at_position(rga, 2) == nil
+    end
+
+    test "returns nil for an empty RGA" do
+      rga = RGA.new()
+      assert RGA.id_at_position(rga, 1) == nil
+    end
+
+    test "handles interleaved insertions correctly" do
+      rga = RGA.new()
+      rga = RGA.insert(rga, "a", nil, {1, :peer_a})
+      rga = RGA.insert(rga, "c", {1, :peer_a}, {2, :peer_a})
+      rga = RGA.insert(rga, "b", {1, :peer_a}, {3, :peer_b})
+
+      # Expected order is "abc" because {3, :peer_b} > {2, :peer_a}
+      assert RGA.to_string(rga) == "abc"
+      assert RGA.id_at_position(rga, 1) == {1, :peer_a}
+      assert RGA.id_at_position(rga, 2) == {3, :peer_b}
+      assert RGA.id_at_position(rga, 3) == {2, :peer_a}
+    end
+
+    test "handles deletions correctly" do
+      rga = RGA.new()
+      rga = RGA.insert(rga, "a", nil, {1, :peer_a})
+      rga = RGA.insert(rga, "c", {1, :peer_a}, {2, :peer_a})
+      rga = RGA.insert(rga, "b", {1, :peer_a}, {3, :peer_b})
+      rga = RGA.insert(rga, "d", {1, :peer_a}, {4, :peer_b})
+
+      # Before deletion: "adbc" (ordered by descending ID: a=1, then d=4, b=3, c=2)
+      assert RGA.to_string(rga) == "adbc"
+      # "a"
+      assert RGA.id_at_position(rga, 1) == {1, :peer_a}
+      # "d"
+      assert RGA.id_at_position(rga, 2) == {4, :peer_b}
+      # "b"
+      assert RGA.id_at_position(rga, 3) == {3, :peer_b}
+      # "c"
+      assert RGA.id_at_position(rga, 4) == {2, :peer_a}
+
+      # Delete "c" (element with ID {2, :peer_a})
+      rga = RGA.delete(rga, {2, :peer_a})
+
+      # After deletion: "adb" (skipping the deleted "c")
+      assert RGA.to_string(rga) == "adb"
+      # "a"
+      assert RGA.id_at_position(rga, 1) == {1, :peer_a}
+      # "d"
+      assert RGA.id_at_position(rga, 2) == {4, :peer_b}
+      # "b"
+      assert RGA.id_at_position(rga, 3) == {3, :peer_b}
+
+      # Position 4 should now be out of bounds since we only have 3 visible elements
+      assert RGA.id_at_position(rga, 4) == nil
+
+      # Verify the deleted element still exists but is marked as tombstone
+      deleted_element = rga.elements[{2, :peer_a}]
+      assert deleted_element.deleted == true
+      assert deleted_element.char == "c"
+    end
+
+    test "handles multiple deletions correctly" do
+      rga = RGA.new()
+      rga = RGA.insert(rga, "a", nil, {1, :peer_a})
+      rga = RGA.insert(rga, "b", {1, :peer_a}, {2, :peer_a})
+      rga = RGA.insert(rga, "c", {2, :peer_a}, {3, :peer_a})
+      rga = RGA.insert(rga, "d", {3, :peer_a}, {4, :peer_a})
+      rga = RGA.insert(rga, "e", {4, :peer_a}, {5, :peer_a})
+
+      # Before deletions: "abcde"
+      assert RGA.to_string(rga) == "abcde"
+      # "c"
+      assert RGA.id_at_position(rga, 3) == {3, :peer_a}
+
+      # Delete "b" and "d"
+      # Delete "b"
+      rga = RGA.delete(rga, {2, :peer_a})
+      # Delete "d"
+      rga = RGA.delete(rga, {4, :peer_a})
+
+      # After deletions: "ace" (positions shift due to deletions)
+      assert RGA.to_string(rga) == "ace"
+      # "a"
+      assert RGA.id_at_position(rga, 1) == {1, :peer_a}
+      # "c" (now at position 2)
+      assert RGA.id_at_position(rga, 2) == {3, :peer_a}
+      # "e" (now at position 3)
+      assert RGA.id_at_position(rga, 3) == {5, :peer_a}
+      # Out of bounds
+      assert RGA.id_at_position(rga, 4) == nil
+    end
+
+    test "handles deletion of all elements correctly" do
+      rga = RGA.new()
+      rga = RGA.insert(rga, "a", nil, {1, :peer_a})
+      rga = RGA.insert(rga, "b", {1, :peer_a}, {2, :peer_a})
+
+      assert RGA.to_string(rga) == "ab"
+
+      rga = RGA.delete(rga, {1, :peer_a})
+      rga = RGA.delete(rga, {2, :peer_a})
+
+      assert RGA.to_string(rga) == ""
+      assert RGA.id_at_position(rga, 1) == nil
+      assert RGA.id_at_position(rga, 2) == nil
     end
   end
 end

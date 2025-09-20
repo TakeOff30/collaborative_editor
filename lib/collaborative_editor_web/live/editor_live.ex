@@ -6,9 +6,14 @@ defmodule CollaborativeEditorWeb.EditorLive do
 
   @impl true
   def mount(%{"peer_id" => peer_id}, session, socket) do
+    peer_id = String.to_integer(peer_id)
     user_id = session["user_id"]
     active_user_for_peer = SessionHandler.get_user_by_peer(peer_id)
 
+    # the logic here below allows one single user to be active on a peer slot
+
+    # any user that tries to access the editor liveview
+    # while it is occupied gets redirected to main menu
     cond do
       active_user_for_peer != nil and active_user_for_peer != user_id ->
         {:ok,
@@ -18,6 +23,8 @@ defmodule CollaborativeEditorWeb.EditorLive do
          |> redirect(to: ~p"/")}
 
       true ->
+        Phoenix.PubSub.subscribe(CollaborativeEditor.PubSub, "doc_update#{peer_id}")
+
         if connected?(socket),
           do: Phoenix.PubSub.subscribe(CollaborativeEditor.PubSub, "doc_update#{peer_id}")
 
@@ -58,7 +65,29 @@ defmodule CollaborativeEditorWeb.EditorLive do
   end
 
   @impl true
-  def handle_event() do
+  def handle_event("text_operation", %{"type" => "insert", "at" => at, "char" => char}, socket) do
+    peer_pid = socket.assigns.peer_pid
+    # The `at` position is the cursor position *after* the insert.
+    # The predecessor is the character at the position *before* the insert.
+    predecessor_id = Peer.id_at_position(peer_pid, at - 1)
+    Peer.insert(peer_pid, char, predecessor_id)
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("text_operation", %{"type" => "delete", "at" => at}, socket) do
+    peer_pid = socket.assigns.peer_pid
+    # The `at` position is the cursor position where the deletion happened.
+    # We need to delete the character that was at that position.
+    id_to_delete = Peer.id_at_position(peer_pid, at)
+    if id_to_delete, do: Peer.delete(peer_pid, id_to_delete)
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:doc_update, new_document}, socket) do
+    # Push the new document state to the client-side hook.
+    {:noreply, push_event(socket, "doc_update", %{document: new_document})}
   end
 
   @impl true
@@ -77,9 +106,10 @@ defmodule CollaborativeEditorWeb.EditorLive do
             <textarea
               id={"editor-#{@peer_id}"}
               class="w-full h-96 p-4 border-transparent rounded-md bg-base-100 font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-              phx-change="change"
-              phx-target={@peer_id}
-            ><%= @document %></textarea>
+              phx-hook="Editor"
+              data-document={@document}
+              phx-update="ignore"
+            ></textarea>
           </div>
         </div>
       </div>
