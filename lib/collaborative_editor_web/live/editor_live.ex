@@ -85,31 +85,40 @@ defmodule CollaborativeEditorWeb.EditorLive do
   end
 
   @impl true
-  def handle_info({:doc_update, new_document}, socket) do
-    # Push the new document state to the client-side hook.
-    {:noreply, push_event(socket, "doc_update", %{document: new_document})}
+  def handle_info({:doc_update, new_document, cursor_pos}, socket) do
+    {:noreply,
+     push_event(socket, "doc_update", %{document: new_document, cursor_pos: cursor_pos})}
   end
 
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash}>
-      <div class="flex flex-col items-center w-full min-h-screen bg-base-200">
-        <div class="w-full max-w-4xl p-8">
-          <div class="flex justify-between items-center mb-6">
+      <div class="flex flex-row w-full h-[calc(100vh-4rem)] bg-base-200 p-8 gap-8">
+        <div class="w-1/2 h-full flex flex-col bg-base-100 rounded-box shadow-xl p-6">
+          <div class="flex justify-between items-center mb-4 flex-shrink-0">
             <h1 class="text-3xl font-bold">Live Editor (Peer #<%= @peer_id %>)</h1>
             <.link href={~p"/"} class="btn btn-ghost">
               &larr; Back to Menu
             </.link>
           </div>
-          <div class="bg-base-100 rounded-box shadow-xl">
+          <div class="flex-grow h-full">
             <textarea
               id={"editor-#{@peer_id}"}
-              class="w-full h-96 p-4 border-transparent rounded-md bg-base-100 font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+              class="w-full h-full p-4 border-transparent rounded-md bg-base-100 font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-none"
               phx-hook="Editor"
               data-document={@document}
               phx-update="ignore"
-            ></textarea>
+            >
+            </textarea>
+          </div>
+        </div>
+
+        <div class="w-1/2 h-full flex flex-col bg-base-100 rounded-box shadow-xl p-6">
+          <h2 class="text-2xl font-bold mb-4 flex-shrink-0">Network Visualization</h2>
+          <div
+            id="graph-visualization"
+          >
           </div>
         </div>
       </div>

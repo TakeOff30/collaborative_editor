@@ -23,6 +23,7 @@ defmodule CollaborativeEditor.RGA do
   @spec insert(t(), String.t(), {integer, any()} | nil, {integer, any()}) :: t()
   def insert(rga, char, predecessor_id, id) do
     new_element = %Element{id: id, char: char, deleted: false, predecessor_id: predecessor_id}
+    IO.puts(inspect(new_element))
     updated_elements = Map.put(rga.elements, id, new_element)
 
     new_head =
@@ -59,6 +60,14 @@ defmodule CollaborativeEditor.RGA do
     end
   end
 
+  @spec position_of_id(t(), Element.id()) :: integer() | nil
+  def position_of_id(rga, id) do
+    case Enum.find_index(to_list(rga), &(&1.id == id)) do
+      nil -> nil
+      index -> index + 1
+    end
+  end
+
   @spec to_list(t()) :: list(Element.t())
   def to_list(rga) do
     successors_map =
@@ -66,48 +75,24 @@ defmodule CollaborativeEditor.RGA do
       |> Map.values()
       |> Enum.group_by(fn element -> element.predecessor_id end)
 
-    build_list_filtered(successors_map, nil)
+    build_list_from_map(successors_map, nil)
   end
 
-  @spec build_list_filtered(map(), {integer, any}) :: list(Element.t())
-  defp build_list_filtered(successors_map, predecessor_id) do
+  defp build_list_from_map(successors_map, predecessor_id) do
     successors = Map.get(successors_map, predecessor_id, [])
-
-    sorted_successors =
-      Enum.sort_by(successors, fn element -> element.id end, fn a, b -> a >= b end)
+    sorted_successors = Enum.sort(successors, fn a, b -> a.id > b.id end)
 
     Enum.flat_map(sorted_successors, fn element ->
       non_deleted_part = if element.deleted, do: [], else: [element]
-
-      rest = build_list_filtered(successors_map, element.id)
-
+      rest = build_list_from_map(successors_map, element.id)
       non_deleted_part ++ rest
     end)
   end
 
   @spec to_string(t()) :: String.t()
   def to_string(rga) do
-    successors_map =
-      rga.elements
-      |> Map.values()
-      |> Enum.group_by(fn element -> element.predecessor_id end)
-
-    build_string(successors_map, nil, rga.elements)
-  end
-
-  @spec build_string(map(), {any(), integer}, map()) :: String.t()
-  defp build_string(successors_map, predecessor_id, elements) do
-    successors = Map.get(successors_map, predecessor_id, [])
-
-    sorted_successors =
-      Enum.sort_by(successors, fn element -> element.id end, fn a, b -> a >= b end)
-
-    Enum.reduce(sorted_successors, "", fn element, acc ->
-      if Map.get(elements, element.id).deleted do
-        acc <> build_string(successors_map, element.id, elements)
-      else
-        acc <> element.char <> build_string(successors_map, element.id, elements)
-      end
-    end)
+    rga
+    |> to_list()
+    |> Enum.map_join("", fn element -> element.char end)
   end
 end

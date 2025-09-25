@@ -62,46 +62,32 @@ defmodule CollaborativeEditor.Peer do
   def init(args) do
     peers = PeerRegistry.get_active_peers(args.id)
     Logger.log("Peer #{args.id} announces presence")
+
+    # announce presence to other peers so they can start monitoring
     broadcast_to_peers(peers, {:new_peer, args.id, self()})
 
-    peer_state =
-      if map_size(peers) == 0 do
-        IO.puts("No other peers found. Initializing new document.")
+    initial_state = %__MODULE__{
+      id: args.id,
+      rga: RGA.new(),
+      vector_clock: %{args.id => 0},
+      op_buffer: [],
+      peer_map: peers
+    }
 
-        %__MODULE__{
-          id: args.id,
-          rga: RGA.new(),
-          vector_clock: %{args.id => 0},
-          op_buffer: [],
-          peer_map: %{}
-        }
-      else
-        IO.puts(
-          "Found existing peers: #{inspect(Map.keys(peers))}. Contacting one to sync state."
-        )
-
-        updated_state =
-          peers
-          |> Map.values()
-          |> Enum.at(0)
-          |> GenServer.call(:get_state)
-
-        %__MODULE__{
-          id: args.id,
-          rga: updated_state.rga,
-          vector_clock: Map.put(updated_state.vector_clock, args.id, 0),
-          op_buffer: [],
-          peer_map: peers
-        }
-      end
+    # sync state asynchronously, avoids deadlocking during initialization
+    # of more peers concurrently which end up awaiting for each other's
+    # response to call.
+    if map_size(peers) > 0 do
+      send(self(), :sync_state)
+    end
 
     # monitor the other peers to detect crashes
-    Map.values(peer_state.peer_map)
+    Map.values(peers)
     |> Enum.each(fn pid ->
       Process.monitor(pid)
     end)
 
-    {:ok, peer_state}
+    {:ok, initial_state}
   end
 
   @impl GenServer
@@ -119,11 +105,10 @@ defmodule CollaborativeEditor.Peer do
   @impl GenServer
   @spec handle_cast({:insert, String.t(), op_id() | nil}, t()) :: {:noreply, t()}
   def handle_cast({:insert, char, predecessor_id}, state) do
-    updated_rga =
-      RGA.insert(state.rga, char, predecessor_id, {state.vector_clock[state.id] + 1, state.id})
-
+    new_id = {state.vector_clock[state.id] + 1, state.id}
+    updated_rga = RGA.insert(state.rga, char, predecessor_id, new_id)
     updated_vector_clock = Map.put(state.vector_clock, state.id, state.vector_clock[state.id] + 1)
-    op_to_broadcast = {:insert, char, predecessor_id, {updated_vector_clock[state.id], state.id}}
+    op_to_broadcast = {:insert, char, predecessor_id, new_id}
     Logger.log("#{state.id} inserts a character")
 
     broadcast_to_peers(
@@ -132,7 +117,12 @@ defmodule CollaborativeEditor.Peer do
     )
 
     new_state = %{state | rga: updated_rga, vector_clock: updated_vector_clock}
-    broadcast_document_update(new_state)
+
+    # find the position in which the char has been ultimately inserted
+    final_position = RGA.position_of_id(new_state.rga, new_id)
+    broadcast_document_update(new_state, final_position)
+
+    IO.puts(inspect(RGA.to_string(new_state.rga)))
     {:noreply, new_state}
   end
 
@@ -150,7 +140,8 @@ defmodule CollaborativeEditor.Peer do
     )
 
     new_state = %{state | rga: updated_rga, vector_clock: updated_vector_clock}
-    broadcast_document_update(new_state)
+    broadcast_document_update(new_state, nil)
+
     {:noreply, new_state}
   end
 
@@ -176,6 +167,50 @@ defmodule CollaborativeEditor.Peer do
     updated_peers = Map.put(state.peer_map, new_peer_id, new_peer_pid)
     updated_vc = Map.put_new(state.vector_clock, new_peer_id, 0)
     {:noreply, %{state | peer_map: updated_peers, vector_clock: updated_vc}}
+  end
+
+  @doc """
+  Handles a peer crash notification and removes it from the list of
+  connected peers and from the vector clock.
+  """
+  @impl GenServer
+  @spec handle_info({:DOWN, reference(), :process, pid(), any()}, t()) :: {:noreply, t()}
+  def handle_info({:DOWN, _ref, :process, crashed_peer_pid, _reason}, state) do
+    crashed_peer_id = Enum.find(state.peer_map, fn {_id, pid} -> pid == crashed_peer_pid end)
+
+    case crashed_peer_id do
+      nil ->
+        {:noreply, state}
+
+      {peer_id_to_remove, _pid} ->
+        Logger.log(
+          "#{peer_id_to_remove} has crashed or disconnected. Removing from #{state.id} state"
+        )
+
+        updated_pids = Map.delete(state.peer_map, peer_id_to_remove)
+        {:noreply, %{state | peer_map: updated_pids}}
+    end
+  end
+
+  @impl GenServer
+  def handle_info(:sync_state, state) do
+    IO.puts(
+      "Found existing peers: #{inspect(Map.keys(state.peer_map))}. Contacting one to sync state."
+    )
+
+    synced_state =
+      state.peer_map
+      |> Map.values()
+      |> Enum.at(0)
+      |> GenServer.call(:get_state)
+
+    new_state = %{
+      state
+      | rga: synced_state.rga,
+        vector_clock: Map.put(synced_state.vector_clock, state.id, 0)
+    }
+
+    {:noreply, new_state}
   end
 
   @spec process_buffer(t()) :: t()
@@ -217,50 +252,35 @@ defmodule CollaborativeEditor.Peer do
   @spec apply_remote_operation(remote_op_tuple(), t()) :: t()
   defp apply_remote_operation({_sender_id, op, sender_vc}, state) do
     # based on the type of operation, apply it, update rga and compute new vc
-    updated_rga =
+    {updated_rga, final_position} =
       case op do
         {:insert, char, predecessor_id, elem_id} ->
-          RGA.insert(state.rga, char, predecessor_id, elem_id)
+          rga = RGA.insert(state.rga, char, predecessor_id, elem_id)
+          pos = RGA.position_of_id(rga, elem_id)
+          {rga, pos}
 
         {:delete, elem_id} ->
-          RGA.delete(state.rga, elem_id)
+          {RGA.delete(state.rga, elem_id), nil}
 
         _ ->
-          state.rga
+          {state.rga, nil}
       end
 
     updated_vc =
       Map.merge(state.vector_clock, sender_vc, fn _k, v1, v2 -> max(v1, v2) end)
 
     new_state = %{state | vector_clock: updated_vc, rga: updated_rga}
-    broadcast_document_update(new_state)
+    broadcast_document_update(new_state, final_position)
     new_state
   end
 
-  @doc """
-  Handles a peer crash notification and removes it from the list of
-  connected peers and from the vector clock.
-  """
-  @impl GenServer
-  @spec handle_info({:DOWN, reference(), :process, pid(), any()}, t()) :: {:noreply, t()}
-  def handle_info({:DOWN, _ref, :process, crashed_peer_pid, _reason}, state) do
-    crashed_peer_id = Enum.find(state.peer_map, fn {_id, pid} -> pid == crashed_peer_pid end)
+  defp broadcast_to_peers(peers, message) do
+    sender_id =
+      case message do
+        {:new_peer, id, _} -> id
+        {:remote_operation, {id, _, _}} -> id
+      end
 
-    case crashed_peer_id do
-      nil ->
-        {:noreply, state}
-
-      {peer_id_to_remove, _pid} ->
-        Logger.log(
-          "#{peer_id_to_remove} has crashed or disconnected. Removing from #{state.id} state"
-        )
-
-        updated_pids = Map.delete(state.peer_map, peer_id_to_remove)
-        {:noreply, %{state | peer_map: updated_pids}}
-    end
-  end
-
-  defp broadcast_to_peers(peers, {_, sender_id, _} = message) do
     Logger.log("#{sender_id} starts broadcasting")
 
     Map.values(peers)
@@ -272,25 +292,13 @@ defmodule CollaborativeEditor.Peer do
     :ok
   end
 
-  defp broadcast_to_peers(peers, {_, {sender_id, _, _}} = message) do
-    Logger.log("#{sender_id} starts broadcasting")
-
-    Map.values(peers)
-    |> Enum.each(fn peer_pid ->
-      Logger.log("#{sender_id} sends broadcast message to #{inspect(peer_pid)}")
-      GenServer.cast(peer_pid, message)
-    end)
-
-    :ok
-  end
-
-  defp broadcast_document_update(state) do
+  defp broadcast_document_update(state, cursor_pos) do
     new_document_string = RGA.to_string(state.rga)
 
     Phoenix.PubSub.broadcast(
       CollaborativeEditor.PubSub,
       "doc_update#{state.id}",
-      {:doc_update, new_document_string}
+      {:doc_update, new_document_string, cursor_pos}
     )
   end
 end

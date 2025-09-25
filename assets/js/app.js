@@ -24,6 +24,7 @@ import { Socket } from 'phoenix';
 import { LiveSocket } from 'phoenix_live_view';
 import { hooks as colocatedHooks } from 'phoenix-colocated/collaborative_editor';
 import topbar from '../vendor/topbar';
+import cytoscape from 'cytoscape';
 
 let Hooks = {};
 
@@ -55,11 +56,16 @@ Hooks.Editor = {
 			this.lastValue = value;
 		});
 
-		this.handleEvent('doc_update', ({ document }) => {
+		this.handleEvent('doc_update', ({ document, cursor_pos }) => {
 			let { selectionStart, selectionEnd } = this.el;
 			this.el.value = document;
 			this.lastValue = document;
-			this.el.setSelectionRange(selectionStart, selectionEnd);
+
+			if (cursor_pos !== null) {
+				this.el.setSelectionRange(cursor_pos, cursor_pos);
+			} else {
+				this.el.setSelectionRange(selectionStart, selectionEnd);
+			}
 		});
 	},
 };
