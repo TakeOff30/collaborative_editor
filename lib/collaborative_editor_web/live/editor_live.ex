@@ -1,4 +1,5 @@
 defmodule CollaborativeEditorWeb.EditorLive do
+  alias CollaborativeEditor.PeerRegistry
   use CollaborativeEditorWeb, :live_view
   alias CollaborativeEditor.Peer
   alias CollaborativeEditor.RGA
@@ -24,6 +25,8 @@ defmodule CollaborativeEditorWeb.EditorLive do
 
       true ->
         Phoenix.PubSub.subscribe(CollaborativeEditor.PubSub, "doc_update#{peer_id}")
+        Phoenix.PubSub.subscribe(CollaborativeEditor.PubSub, "network_activity")
+        Phoenix.PubSub.subscribe(CollaborativeEditor.PubSub, "peers")
 
         if connected?(socket),
           do: Phoenix.PubSub.subscribe(CollaborativeEditor.PubSub, "doc_update#{peer_id}")
@@ -34,23 +37,31 @@ defmodule CollaborativeEditorWeb.EditorLive do
             Phoenix.PubSub.broadcast(CollaborativeEditor.PubSub, "peers", {:peer_update})
             document = RGA.to_string(Peer.get_state(peer_pid).rga)
 
+            peers =
+              PeerRegistry.get_all_active_peers()
+              |> Map.keys()
+              |> Enum.sort()
+
             {:ok,
              assign(socket,
                peer_id: peer_id,
                peer_pid: peer_pid,
                document: document,
-               user_id: user_id
+               user_id: user_id,
+               peers: peers
              )}
 
           {:error, {:already_started, peer_pid}} ->
             document = RGA.to_string(Peer.get_state(peer_pid).rga)
+            peers = PeerRegistry.get_all_active_peers() |> Map.keys() |> Enum.sort()
 
             {:ok,
              assign(socket,
                peer_id: peer_id,
                peer_pid: peer_pid,
                document: document,
-               user_id: user_id
+               user_id: user_id,
+               peers: peers
              )}
         end
     end
@@ -85,6 +96,21 @@ defmodule CollaborativeEditorWeb.EditorLive do
   end
 
   @impl true
+  def handle_info({:peer_update}, socket) do
+    peers =
+      PeerRegistry.get_all_active_peers()
+      |> Map.keys()
+      |> Enum.sort()
+
+    {:noreply, assign(socket, :peers, peers)}
+  end
+
+  @impl true
+  def handle_info({:message, data}, socket) do
+    {:noreply, push_event(socket, "new_message", data)}
+  end
+
+  @impl true
   def handle_info({:doc_update, new_document, cursor_pos}, socket) do
     {:noreply,
      push_event(socket, "doc_update", %{document: new_document, cursor_pos: cursor_pos})}
@@ -114,11 +140,29 @@ defmodule CollaborativeEditorWeb.EditorLive do
           </div>
         </div>
 
-        <div class="w-1/2 h-full flex flex-col bg-base-100 rounded-box shadow-xl p-6">
-          <h2 class="text-2xl font-bold mb-4 flex-shrink-0">Network Visualization</h2>
-          <div
-            id="graph-visualization"
-          >
+        <div class="w-1/2 h-full flex flex-col bg-base-100 rounded-box shadow-xl p-6 gap-6">
+          <div class="flex-shrink-0">
+            <h2 class="text-2xl font-bold mb-4">Network Visualization</h2>
+            <div
+              id="graph-visualization"
+              class="w-full h-80 border border-base-300 rounded-md"
+              phx-hook="NetworkVisualization"
+              data-peers={Jason.encode!(@peers)}
+              phx-update="ignore"
+            >
+            </div>
+          </div>
+
+          <div class="flex-grow flex flex-col min-h-0">
+            <h2 class="text-2xl font-bold mb-4">Operation Log</h2>
+            <div
+              id="operation-logger"
+              class="w-full h-full bg-base-200 rounded p-4 overflow-y-auto font-mono text-sm"
+              phx-hook="OperationLogger"
+              phx-update="ignore"
+            >
+              <p class="text-base-content/70">Waiting for network activity...</p>
+            </div>
           </div>
         </div>
       </div>

@@ -70,6 +70,138 @@ Hooks.Editor = {
 	},
 };
 
+Hooks.NetworkVisualization = {
+	mounted() {
+		this.peers = JSON.parse(this.el.dataset.peers);
+		this.cy = cytoscape({
+			container: this.el,
+			style: [
+				{
+					selector: 'node',
+					style: {
+						'background-color': 'oklch(var(--p))',
+						label: 'data(id)',
+						color: 'oklch(var(--pc))',
+						'font-size': '16px',
+						'text-valign': 'center',
+						'text-halign': 'center',
+						width: 50,
+						height: 50,
+						'text-wrap': 'wrap',
+						'text-max-width': 45,
+					},
+				},
+				{
+					selector: 'edge',
+					style: {
+						width: 3,
+						'line-color': 'oklch(var(--a))',
+						'target-arrow-color': 'oklch(var(--a))',
+						'curve-style': 'bezier',
+					},
+				},
+				{
+					selector: 'edge.animated-edge',
+					style: {
+						'line-color': 'green',
+						width: 6,
+						'transition-property': 'line-color, width',
+						'transition-duration': '0.2s',
+						content: 'data(label)',
+					},
+				},
+			],
+		});
+
+		this.updateGraph();
+
+		this.handleEvent('new_message', (data) => {
+			this.animateMessage(data.from, data.to);
+		});
+	},
+
+	updated() {
+		const newPeers = JSON.parse(this.el.dataset.peers);
+		if (JSON.stringify(this.peers) !== JSON.stringify(newPeers)) {
+			this.peers = newPeers;
+			this.updateGraph();
+		}
+	},
+
+	updateGraph() {
+		const nodes = this.peers.map((peerId) => ({
+			group: 'nodes',
+			data: { id: `peer-${peerId}` },
+		}));
+
+		const edges = [];
+		for (let i = 0; i < this.peers.length; i++) {
+			for (let j = i + 1; j < this.peers.length; j++) {
+				edges.push({
+					group: 'edges',
+					data: {
+						id: `edge-${this.peers[i]}-${this.peers[j]}`,
+						source: `peer-${this.peers[i]}`,
+						target: `peer-${this.peers[j]}`,
+						label: '',
+					},
+				});
+			}
+		}
+
+		this.cy.elements().remove();
+		this.cy.add(nodes);
+		this.cy.add(edges);
+
+		this.cy.layout({ name: 'circle' }).run();
+	},
+
+	animateMessage(from, to, type) {
+		const edge = this.cy.edges(
+			`[source = "peer-${from}"][target = "peer-${to}"], [source = "peer-${to}"][target = "peer-${from}"]`
+		);
+
+		if (edge.empty()) return;
+
+		edge.data('label', type);
+		edge.flashClass('animated-edge', 150);
+
+		setTimeout(() => {
+			edge.data('label', '');
+		}, 150);
+	},
+};
+
+Hooks.OperationLogger = {
+	mounted() {
+		this.logContainer = this.el;
+		this.hasLogged = false;
+
+		this.handleEvent('new_message', (data) => {
+			if (!this.hasLogged) {
+				this.logContainer.innerHTML = '';
+				this.hasLogged = true;
+			}
+			this.logOperation(data);
+		});
+	},
+
+	logOperation(data) {
+		const logEntry = document.createElement('p');
+		let message = `Peer ${data.from} -> Peer ${data.to}: ${data.type}`;
+
+		if (data.type === 'insert' && data.char && data.id) {
+			message += ` char: '${data.char}', id: ${data.id}`;
+		} else if (data.type === 'delete' && data.id) {
+			message += ` id: ${data.id}`;
+		}
+
+		logEntry.textContent = message;
+		this.logContainer.appendChild(logEntry);
+		this.logContainer.scrollTop = this.logContainer.scrollHeight;
+	},
+};
+
 const csrfToken = document
 	.querySelector("meta[name='csrf-token']")
 	.getAttribute('content');

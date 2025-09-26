@@ -81,7 +81,7 @@ defmodule CollaborativeEditor.RGA.Test do
       # expect the first char inserted from the Peer B to be shifted
       # on the right by one place with respect to the effective insertion
       # because of ordering
-      assert RGA.to_string(rga) == "abcdghief"
+      assert RGA.to_string(rga) == "abcdefghi"
     end
   end
 
@@ -170,7 +170,7 @@ defmodule CollaborativeEditor.RGA.Test do
       rga = RGA.insert(rga, "x", {2, :peer_a}, {1, :peer_b})
       rga = RGA.insert(rga, "y", {1, :peer_b}, {2, :peer_b})
 
-      assert RGA.to_string(rga) == "abxycd"
+      assert RGA.to_string(rga) == "abcdxy"
       assert RGA.id_at_position(rga, 1) == {1, :peer_a}
       assert RGA.id_at_position(rga, 2) == {2, :peer_a}
       assert RGA.id_at_position(rga, 3) == {1, :peer_b}

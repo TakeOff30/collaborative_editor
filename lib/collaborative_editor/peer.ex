@@ -274,6 +274,9 @@ defmodule CollaborativeEditor.Peer do
     new_state
   end
 
+  @doc """
+  Broadcasts operation performed to connected peers and sends details to EditorLive.
+  """
   defp broadcast_to_peers(peers, message) do
     sender_id =
       case message do
@@ -281,17 +284,42 @@ defmodule CollaborativeEditor.Peer do
         {:remote_operation, {id, _, _}} -> id
       end
 
+    payload =
+      case message do
+        {:new_peer, _, _} ->
+          %{type: "join"}
+
+        {:remote_operation, {_, {:insert, char, _, {logical_clock, peer_pid}}, _}} ->
+          %{type: "insert", char: char, id: "[clock: #{logical_clock} - pid: #{peer_pid}]"}
+
+        {:remote_operation, {_, {:delete, {logical_clock, peer_pid}}, _}} ->
+          %{type: "delete", id: "[clock: #{logical_clock} - pid: #{peer_pid}]"}
+
+        _ ->
+          %{type: "op"}
+      end
+
     Logger.log("#{sender_id} starts broadcasting")
 
-    Map.values(peers)
-    |> Enum.each(fn peer_pid ->
+    Map.to_list(peers)
+    |> Enum.each(fn {recipient_id, peer_pid} ->
       Logger.log("#{sender_id} sends broadcast message to #{inspect(peer_pid)}")
+
+      Phoenix.PubSub.broadcast(
+        CollaborativeEditor.PubSub,
+        "network_activity",
+        {:message, Map.merge(payload, %{from: sender_id, to: recipient_id})}
+      )
+
       GenServer.cast(peer_pid, message)
     end)
 
     :ok
   end
 
+  @doc """
+  Called on RGA modification, sends message to EditorLive to update frontend.
+  """
   defp broadcast_document_update(state, cursor_pos) do
     new_document_string = RGA.to_string(state.rga)
 

@@ -31,3 +31,5 @@ collaborative_editor-*.tar
 !README.md
 
 peer_communication.log
+
+node_modules
