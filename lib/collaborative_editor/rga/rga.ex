@@ -23,7 +23,6 @@ defmodule CollaborativeEditor.RGA do
   @spec insert(t(), String.t(), {integer, any()} | nil, {integer, any()}) :: t()
   def insert(rga, char, predecessor_id, id) do
     new_element = %Element{id: id, char: char, deleted: false, predecessor_id: predecessor_id}
-    IO.puts(inspect(new_element))
     updated_elements = Map.put(rga.elements, id, new_element)
 
     new_head =
