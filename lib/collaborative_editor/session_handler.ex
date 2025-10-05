@@ -22,6 +22,10 @@ defmodule CollaborativeEditor.SessionHandler do
     GenServer.call(__MODULE__, {:get_user, peer_id})
   end
 
+  def reset_state() do
+    GenServer.call(__MODULE__, :reset_state)
+  end
+
   # server callbacks
   @impl true
   def init(args) do
@@ -54,5 +58,10 @@ defmodule CollaborativeEditor.SessionHandler do
   @impl true
   def handle_call({:get_user, peer_id}, _from, state) do
     {:reply, Map.get(state, peer_id), state}
+  end
+
+  @impl true
+  def handle_call(:reset_state, _from, _state) do
+    {:reply, :ok, %{}}
   end
 end

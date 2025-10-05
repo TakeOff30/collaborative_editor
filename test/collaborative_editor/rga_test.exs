@@ -173,10 +173,10 @@ defmodule CollaborativeEditor.RGA.Test do
       assert RGA.to_string(rga) == "abcdxy"
       assert RGA.id_at_position(rga, 1) == {1, :peer_a}
       assert RGA.id_at_position(rga, 2) == {2, :peer_a}
-      assert RGA.id_at_position(rga, 3) == {1, :peer_b}
-      assert RGA.id_at_position(rga, 4) == {2, :peer_b}
-      assert RGA.id_at_position(rga, 5) == {3, :peer_a}
-      assert RGA.id_at_position(rga, 6) == {4, :peer_a}
+      assert RGA.id_at_position(rga, 3) == {3, :peer_a}
+      assert RGA.id_at_position(rga, 4) == {4, :peer_a}
+      assert RGA.id_at_position(rga, 5) == {1, :peer_b}
+      assert RGA.id_at_position(rga, 6) == {2, :peer_b}
     end
 
     test "handles deletions correctly" do
