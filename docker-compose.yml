@@ -1,19 +1,18 @@
-# docker-compose.yml
-version: '3.8'
-
 services:
-  app:
+  web:
+    image: collaborative_editor
     build: .
+    env_file: .env
     ports:
       - "4000:4000"
+    volumes:
+      - .:/app
+      - /app/deps
+      - /app/_build
+      - /app/assets/node_modules
+      - /app/priv/static/assets
     environment:
-      - SECRET_KEY_BASE=${SECRET_KEY_BASE}
-    env_file:
-      - .env
-
-volumes:
-  app_data:
-
-networks:
-  default:
-    driver: bridge
+      - MIX_ENV=dev
+      - PHX_SERVER=true
+    stdin_open: true
+    tty: true

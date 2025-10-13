@@ -72,10 +72,22 @@ defmodule CollaborativeEditor.MixProject do
   #
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
+    # [
+    #   setup: ["deps.get"],
+    #   test: ["test"],
+    #   precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"]
+    # ]
     [
-      setup: ["deps.get"],
-      test: ["test"],
-      precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"]
+      setup: ["deps.get", "assets.setup", "assets.build"],
+        "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
+        "assets.build": ["cmd --cd assets npm ci", "tailwind collaborative_editor", "esbuild collaborative_editor"],
+        "assets.deploy": [
+          "cmd --cd assets npm ci",
+          "tailwind collaborative_editor --minify",
+          "esbuild collaborative_editor --minify",
+          "phx.digest"
+        ],
+        precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"]
     ]
   end
 end

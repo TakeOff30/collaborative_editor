@@ -1,23 +1,30 @@
-# Dockerfile for Phoenix Application (Development)
+FROM elixir:1.17-alpine
 
-FROM elixir:1.15-slim
+# Install system dependencies
+RUN apk add --no-cache --update git build-base nodejs npm inotify-tools
 
 WORKDIR /app
 
+# Install Mix dependencies
 RUN mix local.hex --force && mix local.rebar --force
 
-# install dependencies
-COPY mix.exs mix.lock ./
-
-RUN mix deps.get && mix deps.compile
-
+# Copy the entire repository
 COPY . .
 
-ENV MIX_ENV=dev
-ENV PORT=4000
-ENV PHX_SERVER=true
+# Install Elixir dependencies
+RUN mix deps.get
 
+# Set up assets (install tailwind and esbuild if missing)
+RUN mix assets.setup
+
+# Build assets initially
+RUN mix assets.build
+
+# Expose the Phoenix port
 EXPOSE 4000
 
-# `mix phx.server` is used for development to enable code reloading.
+# Set environment to development by default
+ENV MIX_ENV=dev
+
+# Start the Phoenix server
 CMD ["mix", "phx.server"]

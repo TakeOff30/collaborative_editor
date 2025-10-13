@@ -33,13 +33,25 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  # Host/port your app is reachable at. In container/local setups we default to localhost:4000.
+  host = System.get_env("PHX_HOST") || "localhost"
   port = String.to_integer(System.get_env("PORT") || "4000")
+
+  # Public URL settings (used for URL generation, logs, etc). By default we mirror the HTTP port
+  # and use plain http unless explicitly overridden. This avoids advertising HTTPS when no certs
+  # are configured (which caused browsers to attempt TLS on a clear-text port, generating warnings
+  # like "Connection that looks like TLS received on a clear channel").
+  url_scheme = System.get_env("URL_SCHEME") || "http"
+  url_port =
+    case System.get_env("URL_PORT") do
+      nil -> port
+      val -> String.to_integer(val)
+    end
 
   config :collaborative_editor, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   config :collaborative_editor, CollaborativeEditorWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: [host: host, port: url_port, scheme: url_scheme],
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
@@ -49,6 +61,24 @@ if config_env() == :prod do
       port: port
     ],
     secret_key_base: secret_key_base
+
+    # Optional HTTPS support: provide SSL_KEY_PATH and SSL_CERT_PATH (and optionally HTTPS_PORT) to enable.
+  if keyfile = System.get_env("SSL_KEY_PATH") do
+    certfile =
+      System.get_env("SSL_CERT_PATH") ||
+        raise "environment variable SSL_CERT_PATH is required when SSL_KEY_PATH is set"
+
+    https_port = String.to_integer(System.get_env("HTTPS_PORT") || "4443")
+
+    config :hello, HelloWeb.Endpoint,
+      https: [
+        ip: {0, 0, 0, 0, 0, 0, 0, 0},
+        port: https_port,
+        cipher_suite: :strong,
+        keyfile: keyfile,
+        certfile: certfile
+      ]
+  end
 
   # ## SSL Support
   #

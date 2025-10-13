@@ -16,15 +16,11 @@ defmodule CollaborativeEditor.PeerTest do
   end
 
   test "a new peer synchronizes its state with an existing peer" do
-    # Start the first peer
     {:ok, peer1} = Peer.start_link(1)
-    # Make some changes to the first peer's state
     Peer.insert(peer1, "a", nil)
     Peer.insert(peer1, "b", {1, 1})
 
-    # Start the second peer
     {:ok, peer2} = Peer.start_link(2)
-    # The second peer should have synchronized its state with the first peer
     state1 = Peer.get_state(peer1)
     state2 = Peer.get_state(peer2)
 
