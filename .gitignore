@@ -33,3 +33,7 @@ collaborative_editor-*.tar
 peer_communication.log
 
 node_modules
+
+# compiled frontend output
+/priv/static/assets/js/
+/priv/static/assets/css/
